@@ -1,0 +1,444 @@
+---
+title: "Dashboard 1052"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    logo: fao-bn.png
+runtime: shiny
+---
+
+<!-- Estilos personalizados -->
+
+```{=html}
+<style>
+  /* Ocultar el texto del título */
+  .navbar-header .navbar-brand span {
+    display: none !important;
+  }
+
+  /* Reducir tamaño del logo FAO */
+  .navbar-brand img {
+    max-height: 40px !important;
+    height: auto !important;
+    width: auto !important;
+  }
+
+  /* Estilos de la barra de navegación */
+  .navbar {
+    background-color: #085275 !important;
+    box-shadow: none !important;
+  }
+
+  .navbar-nav > li > a {
+    color: #FFFFFF !important;
+  }
+
+  .navbar-nav > li > a:hover {
+    color: #FFFFFF !important;
+  }
+  
+.sidebar {
+  width: 150px !important;}
+
+</style>
+```
+
+```{=html}
+<!-- Logo AgroJoven en el cuerpo del dashboard 
+<div style="text-align: left; margin: 2px 0;">
+  <img src="logo_agrojoven.svg" style="height: 28px;" alt="Logo AgroJoven">
+</div>-->
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+gc()
+
+#unlink("C:/Users/jose2/AppData/Local/R/win-library/4.5/00LOCK", recursive = TRUE)
+
+pacman::p_load(rvest, dplyr, tidytext, tm, tidyverse,
+               ggplot2, wordcloud, wordcloud2, plotly,
+               igraph, ggraph, tidygraph, forcats, httr,
+               KoboconnectR, devtools, haven, readxl,
+               stringi, readxl, labelled, units, sf,
+               sp, spdep, leaflet, tidyverse,
+               scatterplot3d, ggrepel, cowplot, ggmap,
+               writexl, plotly, tidyr, rsconnect, DT,
+               bs4Dash, fresh, openxlsx)
+
+setwd("/Users/josedavidbeltransegovia/OneDrive/R/R_dat/FAO/1052/FAO-DASHBOARD/EMPLEO_JOVEN")
+
+load("base_datos.Rdata")
+load("base_datos_desc.Rdata")
+load("geo_prov.Rdata")
+
+```
+
+# JOVENES
+
+## Fila 0 {data-height="30"}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+selectInput("filtro_despro", "Provincia:",
+            choices = c("Todos",
+                        sort(unique(c(as.character(df_unido$DPA_DESPRO),
+                                      as.character(df_final$provincia))))))
+```
+
+## Fila 1
+
+### Piramide Poblacional de los Emprendedores
+
+```{r piramide, echo=FALSE, message=FALSE, warning=FALSE}
+renderPlotly({
+  piramide <- df_final %>%
+    { if (input$filtro_despro != "Todos") filter(., provincia == input$filtro_despro) else . } %>%
+    group_by(rango_edad, genero) %>%
+    summarise(conteo = n(), .groups = "drop") %>%
+    mutate(conteo = ifelse(genero == "masculino", -conteo, conteo))
+  
+  A <- ggplot(piramide, aes(
+    x = rango_edad, y = conteo, fill = genero,
+    text = paste("Edad:", rango_edad,
+                 "<br>Género:", genero,
+                 "<br>Conteo:", abs(conteo))
+  )) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    scale_y_continuous(labels = abs) +
+    labs(x = NULL, y = "Número de Personas") +
+    scale_fill_manual(values = c("masculino" = "#1f77b4",
+                                 "femenino" = "#DDA73A")) +
+    theme_minimal()
+  
+  ggplotly(A, tooltip = "text")
+})
+```
+
+### Mapa de emprendedores
+
+```{r mapa, echo=FALSE, message=FALSE, warning=FALSE}
+renderLeaflet({
+  df_filtrado <- df_unido %>%
+    { if (input$filtro_despro != "Todos") filter(.,DPA_DESPRO == input$filtro_despro) 
+      else . }
+  
+  leaflet(df_filtrado) %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    addPolygons(
+      fillColor = ~colorNumeric("YlGnBu", num_emp)(num_emp),
+      weight = 1,
+      opacity = 1,
+      color = "white",
+      fillOpacity = 0.7,
+      label = ~paste0("Número de emprendimientos en ",
+                      DPA_DESPRO, ": ", num_emp)
+    )
+})
+```
+
+## Fila 2
+
+### Distribución Género
+
+```{r dona_GEN, echo=FALSE, message=FALSE, warning=FALSE}
+df_plot2 <- df_final %>%
+  count(genero) %>%
+  mutate(porcentaje = round(n / sum(n) * 100, 1),
+         etiqueta = paste0(genero, ": ", porcentaje, "%"))
+
+textinfo = "label+percent"
+
+plot_ly(
+  data = df_plot2,
+  labels = ~genero,
+  values = ~n,
+  type = "pie",
+  hole = 0.5,
+  text = ~etiqueta,              # Usa el texto personalizado
+  textinfo = "text",             # Muestra solo ese texto
+  hoverinfo = "label+percent",   # Tooltip al pasar el mouse
+  showlegend = FALSE,
+  marker = list(colors = c("#DDA73A", "#1f77b4"))
+)
+
+
+
+
+```
+
+### Instrucción Formal
+
+```{r var_ed, echo=FALSE, message=FALSE, warning=FALSE}
+df_edu <- df_final %>%
+  count(Inst_form) %>%
+  mutate(porcentaje = round(n / sum(n) * 100, 1),
+         etiqueta = paste0(porcentaje, "%"))
+
+D <- ggplot(df_edu, aes(x = reorder(Inst_form, n), y = n, text = etiqueta)) +
+  geom_bar(stat = "identity", fill = "#59BA48", color = NA) +
+  coord_flip() +
+  theme(
+    axis.title.x = element_blank(),     # ❌ sin nombre eje X (ahora horizontal)
+    axis.text.x = element_blank(),      # ❌ sin números eje X (ahora horizontal)
+    axis.ticks.x = element_blank(),     # ❌ sin ticks eje X
+    axis.title.y = element_blank(),     # ❌ sin nombre eje Y (ahora vertical)
+    axis.text.y = element_text(size = 10),  # ✅ mostrar etiquetas de categorías
+    panel.grid = element_blank(),       
+    panel.background = element_blank(), 
+    plot.background = element_blank(),  
+    plot.title = element_blank()
+  )
+
+ggplotly(D, tooltip = "text")
+
+```
+
+### Autoidentificación Étnica
+
+```{r var_et, echo=FALSE, message=FALSE, warning=FALSE}
+df_etnia <- df_final %>%
+  count(etnia_sel) %>%
+  mutate(porcentaje = round(n / sum(n) * 100, 1),
+         etiqueta = paste0(porcentaje, "%"))
+
+
+grafico <- ggplot(df_etnia, aes(x = reorder(etnia_sel, -n), y = n, text = etiqueta)) +
+  geom_bar(stat = "identity", fill = "darkorange", color = NA) +  # sin bordes
+  theme(
+    axis.title.x = element_blank(),     # sin nombre eje X
+    axis.title.y = element_blank(),     # sin nombre eje Y
+    axis.text.y = element_blank(),      # sin texto eje Y
+    axis.ticks = element_blank(),       # sin ticks
+    panel.grid = element_blank(),       # sin cuadrícula
+    panel.background = element_blank(), # fondo limpio
+    plot.background = element_blank(),  # sin borde externo
+    axis.text.x = element_text(angle = 45, hjust = 1),  # etiquetas X rotadas
+    plot.title = element_blank()        # sin título
+  )
+
+
+
+
+ggplotly(grafico, tooltip = "text")
+
+```
+
+# EMPRENDIMIENTOS
+
+## Fila 1
+
+### ESTADO DE LAS INICIATIVAS
+
+```{r dona 1, echo=FALSE, message=FALSE, warning=FALSE}
+df_plot <- df_final %>%
+  count(est_ini) %>%
+  mutate(porcentaje = round(n / sum(n) * 100, 1),
+         etiqueta = paste0(est_ini, ": ", porcentaje, "%"))
+
+plot_ly(
+  data = df_plot,
+  labels = ~est_ini,
+  values = ~n,
+  type = "pie",
+  hole = 0.5,
+  text = ~etiqueta,
+  textinfo = "percent",
+  hoverinfo = "label+percent",
+  showlegend = FALSE
+)
+
+
+```
+
+### FUENTES DE FINANCIAMIENTO
+
+```{r var_fin, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_finan <- df_final %>%
+  filter(!is.na(fue_fin)) %>%
+  count(fue_fin) %>%
+  mutate(
+    porcentaje = round(n / sum(n) * 100, 1),
+    etiqueta = paste0(porcentaje, "%")
+  ) %>%
+  mutate(fue_fin = str_wrap(fue_fin, width = 20))
+
+G <- ggplot(df_finan, aes(x = reorder(fue_fin, n), y = n, text = etiqueta)) +
+  geom_bar(stat = "identity", fill = "#A31C44", color = NA, width = 0.7) +
+  coord_flip() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size = 8),
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    plot.background = element_blank(),
+    plot.title = element_blank(),
+    plot.margin = margin(t = 3, r = 5, b = 5, l = 5)
+  )
+
+
+ggplotly(G, width = 590, height = 310, tooltip = "text") %>%
+  layout(
+    margin = list(l = 50, r = 20, b = 20, t = 10)
+  )
+
+
+
+```
+
+## Fila 2
+
+### TIPO DE PERSONERÍA
+
+```{r var_per, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_per <- df_final %>%
+  filter(!is.na(per_jur)) %>%
+  count(per_jur) %>%
+  mutate(
+    porcentaje = round(n / sum(n) * 100, 1),
+    etiqueta = paste0(porcentaje, "%")
+  ) %>%
+  mutate(per_jur = str_wrap(per_jur, width = 20))
+
+E <- ggplot(df_per, aes(x = reorder(per_jur, n), y = n, text = etiqueta)) +
+  geom_bar(stat = "identity", fill = "#126A9F", color = NA, width = 0.4) +
+  coord_flip() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size = 8),
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    plot.background = element_blank(),
+    plot.title = element_blank(),
+    plot.margin = margin(t = 2, r = 2, b = 2, l = 2)
+  )
+
+
+ggplotly(E, width = 590, height = 300, tooltip = "text") %>%
+  layout(
+    margin = list(l = 50, r = 20, b = 10, t = 3)
+  )
+```
+
+### PRINCIPALES PRODUCTOS
+
+```{r cloud, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_desc$texto_completo <- paste(df_desc$des_seg, df_desc$prod_seleccionados, df_desc$descripcion, sep = " ")
+
+corpus <- Corpus(VectorSource(df_desc$texto_completo))
+
+corpus <- tm_map(corpus, content_transformer(tolower))            
+corpus <- tm_map(corpus, removePunctuation)                       
+corpus <- tm_map(corpus, removeNumbers)                           
+corpus <- tm_map(corpus, stripWhitespace)                         
+corpus <- tm_map(corpus, removeWords, stopwords("spanish"))
+
+tdm <- TermDocumentMatrix(corpus)
+matriz <- as.matrix(tdm)
+frecuencias <- sort(rowSums(matriz), decreasing = TRUE)
+datos_nube <- data.frame(word = names(frecuencias), freq = frecuencias)
+
+wordcloud2(datos_nube,
+           shape = "circle",
+           size = 0.46,             
+           widgetsize = c(680, 270))  # ancho x alto
+
+
+```
+
+# ACTIVIDADES PRINCIPALES
+
+## Fila 1
+
+### ACTIVIDADES PRODUCTIVAS
+
+```{r likert, echo=FALSE, message=FALSE, warning=FALSE}
+lik_act <- c( "Agricultura", 
+              "Agregación de alimentos",
+              "Almacenamiento de alimentos",
+              "Almacenamiento en frío",
+              "Distribución de alimentos (incluido delivery)",
+              "Procesamiento de alimentos",
+              "Empaque de alimentos", "Venta al por mayor",
+              "Venta al por menor",
+              "Restaurante y otros servicios de comida (por ejemplo, catering, comedores, hoteles)",
+              "_index")
+
+df_long <- df_final %>%
+  select(all_of(lik_act)) %>%
+  filter(!is.na(`Empaque de alimentos`))
+
+
+actividades <- c( "Agricultura", 
+              "Agregación de alimentos",
+              "Almacenamiento de alimentos",
+              "Almacenamiento en frío",
+              "Distribución de alimentos (incluido delivery)",
+              "Procesamiento de alimentos",
+              "Empaque de alimentos", "Venta al por mayor",
+              "Venta al por menor",
+              "Restaurante y otros servicios de comida (por ejemplo, catering, comedores, hoteles)")
+
+df_long <- df_long %>%
+  pivot_longer(
+    cols = all_of(actividades),
+    names_to = "Actividad",
+    values_to = "Respuesta"
+  )
+
+
+
+
+df_plot <- df_long %>%
+  group_by(Actividad, Respuesta) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Actividad) %>%
+  mutate(
+    Porcentaje = n / sum(n),
+    Etiqueta = paste0(Respuesta, ": ", scales::percent(Porcentaje, accuracy = 1))
+  ) %>%
+  mutate(
+    Respuesta = str_wrap(Respuesta, width = 10),
+    Respuesta = factor(Respuesta)
+  )
+
+
+
+p <- ggplot(df_plot, aes(x = fct_rev(Actividad), y = Porcentaje, fill = Respuesta, text = Etiqueta)) +
+  geom_bar(stat = "identity", position = "fill", width = 0.7) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_fill_brewer(palette = "YlGnBu", direction = 1) +
+  labs(
+    x = NULL,  
+    y = NULL,  
+    title = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid = element_blank(),       
+    legend.position = "none",           
+    plot.title = element_text(face = "bold", size = 16),
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 11)
+  )
+
+print(p)
+
+# Convertir a gráfico interactivo
+ggplotly(p, tooltip = "text")
+
+
+```
