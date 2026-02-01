@@ -69,7 +69,7 @@ pacman::p_load(rvest, dplyr, tidytext, tm, tidyverse,
                writexl, plotly, tidyr, rsconnect, DT,
                bs4Dash, fresh, openxlsx)
 
-setwd("/Users/josedavidbeltransegovia/OneDrive/R/R_dat/FAO/1052/FAO-DASHBOARD/EMPLEO_JOVEN")
+setwd("/Users/josedavidbeltransegovia/OneDrive/R/FAO-DASHBOARD/EMPLEO_JOVEN")
 
 load("base_datos.Rdata")
 load("base_datos_desc.Rdata")
